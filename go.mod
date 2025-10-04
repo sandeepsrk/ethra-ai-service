@@ -1,8 +1,8 @@
-module gpt-router
+module ethra-go
 
-go 1.22
+go 1.22.6
 
 require (
-	github.com/gin-gonic/gin v1.10.0
-	github.com/openai/openai-go v0.4.1
+	github.com/joho/godotenv v1.5.1
+	github.com/sashabaranov/go-openai v1.18.3
 )

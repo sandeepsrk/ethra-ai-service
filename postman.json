@@ -1,0 +1,67 @@
+{
+  "info": {
+    "name": "Go App API",
+    "_postman_id": "b1e08c5d-1d23-4d62-bc11-2a839fd70e5b",
+    "description": "Postman collection to test the Go App endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "POST /prompt (text only)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"prompt\": \"Calculate GST for 1000 INR at 18%\",\n  \"sessionId\": \"test-session\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:3000/prompt",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["prompt"]
+        }
+      }
+    },
+    {
+      "name": "POST /prompt (with image upload)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": "/path/to/your/invoice.jpg"
+            },
+            {
+              "key": "prompt",
+              "value": "Extract details from this bill",
+              "type": "text"
+            },
+            {
+              "key": "sessionId",
+              "value": "test-session",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:3000/prompt",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "3000",
+          "path": ["prompt"]
+        }
+      }
+    }
+  ]
+}
