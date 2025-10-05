@@ -53,8 +53,7 @@ func ProcessTaxGPT(input interface{}) types.AgentResponse {
 	systemMsg := `You are a tax assistant. Normalize extracted invoice data into this JSON schema:
 {
   "invoice_details": { "invoice_number": string, "date": string, "vendor": string, "address": string },
-  "items": [ { "name": string, "quantity": number, "price": number, "total": number } ],
-  "taxes": [ { "rate": number, "amount": number } ],
+  "items": [ { "name": string, "quantity": number, "price": number, "total": number, tax: { "rate": number, "amount": number } } ],
   "totals": { "subtotal": number, "discount": number, "tax_total": number, "grand_total": number, "round_off": number }
 }
 Always return valid JSON.`
