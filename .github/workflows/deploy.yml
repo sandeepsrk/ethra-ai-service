@@ -1,0 +1,83 @@
+name: Deploy Ethra AI
+
+on:
+  push:
+    paths:
+      - "**"
+      - ".github/workflows/deploy.yml"
+    branches:
+      - master
+
+  pull_request:
+    types:
+      - closed
+    branches:
+      - master
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      GO_VERSION: "1.22.6"
+      APP_NAME: "ethra-go"
+      REMOTE_USER: ${{ secrets.REMOTE_USER }}
+      REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
+      REMOTE_PATH: ${{ secrets.REMOTE_PATH }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Set up Go
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      # 3. Cache Go modules
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      # 4. Install dependencies
+      - name: Install dependencies
+        run: go mod tidy
+
+      # 5. Run tests
+      - name: Run tests
+        run: go test ./... -v
+
+      # 6. Build binary
+      - name: Build
+        run: go build -o ${{ env.APP_NAME }} ./cmd/server
+
+      # 7. Deploy via SSH
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ env.REMOTE_HOST }}
+          username: ${{ env.REMOTE_USER }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "Stopping old app if running..."
+            pkill -f ${{ env.APP_NAME }} || true
+            echo "Uploading new binary..."
+            scp -o StrictHostKeyChecking=no ${{ env.APP_NAME }} ${{ env.REMOTE_USER }}@${{ env.REMOTE_HOST }}:${{ env.REMOTE_PATH }}
+            echo "Starting app..."
+            nohup ${{
+            env.REMOTE_PATH
+            }}/${
+            { env.APP_NAME }} > ${{
+            env.REMOTE_PATH
+            }}/app.log 2>&1 &
+            echo "Deployment complete."
