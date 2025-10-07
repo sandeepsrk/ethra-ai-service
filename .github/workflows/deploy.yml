@@ -69,15 +69,4 @@ jobs:
             echo "Uploading new binary..."
             scp -o StrictHostKeyChecking=no ${{ env.APP_NAME }} ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}:${{ env.TARGET_DIR }}/
 
-            echo "Creating .env file..."
-            cat > ${{ env.TARGET_DIR }}/.env <<EOL
-PORT=${{ env.PORT }}
-OPENAI_API_KEY=${{ env.OPENAI_API_KEY }}
-OPENAI_MODEL=${{ env.OPENAI_MODEL }}
-OPENAI_TIMEOUT=${{ env.OPENAI_TIMEOUT }}
-EOL
-
-            echo "Starting app..."
-            sudo systemctl daemon-reload
-            sudo systemctl start ethra-go
-            sudo systemctl status ethra-go --no-pager
+            echo "Creating .
