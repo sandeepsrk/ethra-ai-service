@@ -22,15 +22,19 @@ func init() {
 	if apiKey == "" {
 		log.Fatal("OPENAI_API_KEY not set in ImageAgent")
 	}
+
 	client = openai.NewClient(apiKey)
 }
 
 // ProcessImage takes base64 image and returns normalized JSON
 func ProcessImage(base64Data string) (types.AgentResponse, error) {
 	ctx := context.Background()
-
+	aiModel := os.Getenv("OPENAI_MODEL")
+	if aiModel == "" {
+		log.Fatal("OPENAI_MODEL not set in ImageAgent")
+	}
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: "gpt-4o-mini",
+		Model: aiModel,
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role: "user",

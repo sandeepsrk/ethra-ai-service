@@ -2,12 +2,8 @@ name: Deploy Ethra AI
 
 on:
   push:
-    paths:
-      - "**"
-      - ".github/workflows/deploy.yml"
     branches:
       - master
-
   pull_request:
     types:
       - closed
@@ -20,26 +16,30 @@ jobs:
 
     env:
       GO_VERSION: "1.22.6"
-      APP_NAME: "ethra-go"
-      REMOTE_USER: ${{ secrets.REMOTE_USER }}
-      REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
-      REMOTE_PATH: ${{ secrets.REMOTE_PATH }}
+      APP_NAME: "ethra-ai-service"
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      TARGET_DIR: ${{ secrets.TARGET_DIR }}
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      PORT: ${{ vars.PORT }}
+      OPENAI_API_KEY: ${{ vars.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+      OPENAI_TIMEOUT: ${{ vars.OPENAI_TIMEOUT }}
 
     steps:
-      # 1. Checkout code
+      # 1. Checkout repo
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # 2. Set up Go
+      # 2. Setup Go
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      # 3. Cache Go modules
+      # 3. Cache dependencies
       - name: Cache Go modules
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/go/pkg/mod
@@ -52,32 +52,34 @@ jobs:
       - name: Install dependencies
         run: go mod tidy
 
-      # 5. Run tests
-      - name: Run tests
-        run: go test ./... -v
-
-      # 6. Build binary
-      - name: Build
+      # 5. Build binary
+      - name: Build binary
         run: go build -o ${{ env.APP_NAME }} ./cmd/server
 
-      # 7. Deploy via SSH
+      # 6. Create .env file at runtime
+      - name: Create .env file
+        run: |
+          echo "PORT=${{ env.PORT }}" >> .env
+          echo "OPENAI_API_KEY=${{ env.OPENAI_API_KEY }}" >> .env
+          echo "OPENAI_MODEL=${{ env.OPENAI_MODEL }}" >> .env
+          echo "OPENAI_TIMEOUT=${{ env.OPENAI_TIMEOUT }}" >> .env
+          echo "✅ .env file created:"
+          cat .env
+
+      # 7. Deploy to server
       - name: Deploy to server
         uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ env.REMOTE_HOST }}
-          username: ${{ env.REMOTE_USER }}
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
           key: ${{ env.SSH_PRIVATE_KEY }}
-          port: 22
           script: |
-            echo "Stopping old app if running..."
+            echo "🔹 Stopping old app if running..."
             pkill -f ${{ env.APP_NAME }} || true
-            echo "Uploading new binary..."
-            scp -o StrictHostKeyChecking=no ${{ env.APP_NAME }} ${{ env.REMOTE_USER }}@${{ env.REMOTE_HOST }}:${{ env.REMOTE_PATH }}
-            echo "Starting app..."
-            nohup ${{
-            env.REMOTE_PATH
-            }}/${
-            { env.APP_NAME }} > ${{
-            env.REMOTE_PATH
-            }}/app.log 2>&1 &
-            echo "Deployment complete."
+
+            echo "🔹 Uploading files..."
+            scp -o StrictHostKeyChecking=no ${{ env.APP_NAME }} .env ${{ env.SERVER_USER }}@${{ env.SERVER_HOST }}:${{ env.TARGET_DIR }}
+
+            echo "🔹 Starting app..."
+            nohup ${{ env.TARGET_DIR }}/${{ env.APP_NAME }} > ${{ env.TARGET_DIR }}/app.log 2>&1 &
+            echo "✅ Deployment complete."

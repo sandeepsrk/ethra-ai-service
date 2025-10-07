@@ -24,6 +24,7 @@ func init() {
 	if apiKey == "" {
 		log.Fatal("OPENAI_API_KEY not set in TaxAgent")
 	}
+
 	client = openai.NewClient(apiKey)
 }
 
@@ -32,7 +33,10 @@ func init() {
 func ProcessTaxGPT(input interface{}) types.AgentResponse {
 	start := time.Now()
 	log.Println("🧮 [TaxAgent] Starting normalization...")
-
+	aiModel := os.Getenv("OPENAI_MODEL")
+	if aiModel == "" {
+		log.Fatal("OPENAI_MODEL not set in ImageAgent")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -61,7 +65,7 @@ Always return valid JSON.`
 	log.Println("🔹 [TaxAgent] Sending request to GPT...")
 
 	resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: "gpt-4o-mini",
+		Model: aiModel,
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    "system",
