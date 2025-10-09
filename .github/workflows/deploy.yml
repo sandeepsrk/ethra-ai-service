@@ -28,7 +28,7 @@ jobs:
       GO_VERSION: 1.22.6
       APP_NAME: ethra-go
       TARGET_DIR: /opt/ethra-go
-      PORT: 3000
+      PORT: 8080
       OPENAI_MODEL: gpt-4o-mini
       OPENAI_TIMEOUT: 120000
     steps:
