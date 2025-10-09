@@ -1,4 +1,4 @@
-\name: Deploy Ethra AI Service
+name: Deploy Ethra AI Service
 
 on:
   push:
@@ -10,65 +10,94 @@ on:
     branches:
       - master
 
+concurrency:
+  group: deploy-ethra-ai-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
   build-and-deploy:
+    name: Build & Deploy
     runs-on: ubuntu-latest
     environment: ethra-ai
-
+    timeout-minutes: 20
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     env:
-      GO_VERSION: "1.22.6"
-      APP_NAME: "ethra-go"
-      TARGET_DIR: "/opt/ethra-go"
-      PORT: "3000"
-      OPENAI_MODEL: "gpt-4o-mini"
-      OPENAI_TIMEOUT: "120000"
-
+      GO_VERSION: 1.22.6
+      APP_NAME: ethra-go
+      TARGET_DIR: /opt/ethra-go
+      PORT: 3000
+      OPENAI_MODEL: gpt-4o-mini
+      OPENAI_TIMEOUT: 120000
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-
-      - name: Install dependencies
-        run: go mod tidy
-
-      - name: Run tests
-        run: go test ./... -v
-
-      - name: Build binary
-        run: go build -o ${{ env.APP_NAME }} ./cmd/server
-
-      - name: Upload binary to server
-        uses: appleboy/scp-action@v0.1.7
+          cache: true
+      - name: Cache Go
+        uses: actions/cache@v3
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "${{ env.APP_NAME }}"
-          target: "${{ env.TARGET_DIR }}/"
-
-      - name: Deploy and restart service
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-${{ env.GO_VERSION }}-
+      - name: Tidy modules
+        run: go mod tidy
+      - name: Test
+        run: go test ./... -count=1 -v
+      - name: Build
+        run: |
+          mkdir -p build
+          go build -trimpath -ldflags='-s -w' -o build/${{ env.APP_NAME }} ./cmd/server
+          ls -l build/${{ env.APP_NAME }}
+      - name: Prepare remote dir
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            echo "Stopping old app..."
+            sudo mkdir -p ${{ env.TARGET_DIR }}/releases
+            sudo chown ${{ secrets.SERVER_USER }}:${{ secrets.SERVER_USER }} ${{ env.TARGET_DIR }}
+            ls -al ${{ env.TARGET_DIR }}
+      - name: Upload binary
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: build/${{ env.APP_NAME }}
+          target: ${{ env.TARGET_DIR }}/releases/
+          strip_components: 1
+      - name: Deploy & restart
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            RELEASE_FILE="${{ env.TARGET_DIR }}/releases/${{ env.APP_NAME }}"
+            LIVE_FILE="${{ env.TARGET_DIR }}/${{ env.APP_NAME }}"
             sudo systemctl stop ethra-go || true
-
-            echo "Writing .env..."
-            cat <<EOF > ${{ env.TARGET_DIR }}/.env
-            PORT=${{ env.PORT }}
-            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-            OPENAI_MODEL=${{ env.OPENAI_MODEL }}
-            OPENAI_TIMEOUT=${{ env.OPENAI_TIMEOUT }}
-            EOF
-
-            echo "Restarting ethra-go service..."
+            chmod +x "$RELEASE_FILE"
+            mv -f "$RELEASE_FILE" "$LIVE_FILE"
+            {
+              echo "PORT=${{ env.PORT }}";
+              echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}";
+              echo "OPENAI_MODEL=${{ env.OPENAI_MODEL }}";
+              echo "OPENAI_TIMEOUT=${{ env.OPENAI_TIMEOUT }}";
+            } > ${{ env.TARGET_DIR }}/.env
+            sudo chown ${{ secrets.SERVER_USER }}:${{ secrets.SERVER_USER }} ${{ env.TARGET_DIR }}/.env
             sudo systemctl daemon-reload
             sudo systemctl start ethra-go
-            sudo systemctl status ethra-go --no-pager
+            sudo systemctl status ethra-go --no-pager || (journalctl -u ethra-go -n 100 --no-pager; exit 1)
+      - name: Summary
+        if: always()
+        run: echo "Deployment completed at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
