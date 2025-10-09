@@ -29,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Go
         uses: actions/setup-go@v4
@@ -37,7 +37,7 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: Cache Go modules
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/go/pkg/mod
@@ -55,51 +55,72 @@ jobs:
       - name: Build binary
         run: go build -o ${{ env.APP_NAME }} ./cmd/server
 
-      # --- DEBUGGING ---
-      - name: Debug environment variables
+      - name: Create .env locally
         run: |
-          echo "SERVER_USER: ${SERVER_USER:+set}"
-          echo "SERVER_HOST: ${SERVER_HOST:+set}"
-          echo "SSH_PRIVATE_KEY: ${SSH_PRIVATE_KEY:+set}"
-          echo "OPENAI_API_KEY: ${OPENAI_API_KEY:+set}"
-
-      - name: Test SSH connection
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SSH_PRIVATE_KEY }}
-          script: echo "✅ SSH connection successful!"
-
-      # --- DEPLOYMENT ---
-      - name: Upload new binary
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SSH_PRIVATE_KEY }}
-          source: ${{ env.APP_NAME }}
-          target: ${{ env.TARGET_DIR }}
-
-      - name: Create .env on server and restart service
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SSH_PRIVATE_KEY }}
-          script: |
-            echo "🛑 Stopping old app..."
-            sudo systemctl stop ethra-go || true
-
-            echo "📝 Writing .env file..."
-            cat <<EOF | sudo tee ${{ env.TARGET_DIR }}/.env > /dev/null
+          cat > .env <<EOF
 PORT=${{ env.PORT }}
 OPENAI_API_KEY=${{ env.OPENAI_API_KEY }}
 OPENAI_MODEL=${{ env.OPENAI_MODEL }}
 OPENAI_TIMEOUT=${{ env.OPENAI_TIMEOUT }}
 EOF
+          echo ".env contents:"
+          sed -n '1,200p' .env
 
-            echo "🚀 Restarting service..."
+      - name: Test SSH connectivity
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "SSH connection test OK on $(hostname)"
+
+      - name: Upload binary to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
+          port: 22
+          source: ${{ env.APP_NAME }}
+          target: ${{ env.TARGET_DIR }}
+
+      - name: Upload .env to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
+          port: 22
+          source: .env
+          target: ${{ env.TARGET_DIR }}
+
+      - name: Remote post-deploy (permissions & systemd restart)
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            echo "Stopping old service (if exists)..."
+            sudo systemctl stop ethra-go || true
+
+            echo "Ensuring target directory exists..."
+            sudo mkdir -p ${{ env.TARGET_DIR }}
+            sudo chown -R ${{ env.SERVER_USER }}:${{ env.SERVER_USER }} ${{ env.TARGET_DIR }}
+
+            echo "Make binary executable and set ownership..."
+            sudo chmod +x ${{ env.TARGET_DIR }}/${{ env.APP_NAME }}
+            sudo chown ${{ env.SERVER_USER }}:${{ env.SERVER_USER }} ${{ env.TARGET_DIR }}/${{ env.APP_NAME }}
+
+            echo "Ensure .env exists and set ownership..."
+            sudo chown ${{ env.SERVER_USER }}:${{ env.SERVER_USER }} ${{ env.TARGET_DIR }}/.env
+            sudo chmod 600 ${{ env.TARGET_DIR }}/.env
+
+            echo "Reload systemd and restart service..."
             sudo systemctl daemon-reload
-            sudo systemctl start ethra-go
+            sudo systemctl enable ethra-go || true
+            sudo systemctl restart ethra-go
             sudo systemctl status ethra-go --no-pager
