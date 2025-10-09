@@ -18,7 +18,7 @@ jobs:
     env:
       GO_VERSION: '1.22.6'
       APP_NAME: 'ethra-go'
-      TARGET_DIR: '/opt/ethra-go'
+      TARGET_DIR: '/root'
       SERVER_USER: ${{ secrets.SERVER_USER }}
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
