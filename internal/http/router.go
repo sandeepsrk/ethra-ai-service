@@ -4,8 +4,11 @@ import (
 	"net/http"
 	
 	"ethra-go/internal/handlers"
+	"ethra-go/internal/middleware"
+
 )
 
 func RegisterRoutes() {
-	http.HandleFunc("/prompt", handlers.PromptHandler)
+	mux := http.NewServeMux()
+	mux.Handle("/prompt", middleware.APIKeyAuth(http.HandlerFunc(handlers.PromptHandler)))
 }

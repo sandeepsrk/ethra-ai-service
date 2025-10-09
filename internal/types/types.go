@@ -22,3 +22,9 @@ type MemoryEntry struct {
 }
 
 
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
+
+
+

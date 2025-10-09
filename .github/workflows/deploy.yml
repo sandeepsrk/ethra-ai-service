@@ -93,6 +93,7 @@ jobs:
               echo "OPENAI_API_KEY=${{ vars.OPENAI_API_KEY }}";
               echo "OPENAI_MODEL=${{ env.OPENAI_MODEL }}";
               echo "OPENAI_TIMEOUT=${{ env.OPENAI_TIMEOUT }}";
+              echo "NODE_API_KEY=${{ vars.NODE_API_KEY }}";
             } > ${{ env.TARGET_DIR }}/.env
             sudo chown ${{ secrets.SERVER_USER }}:${{ secrets.SERVER_USER }} ${{ env.TARGET_DIR }}/.env
             sudo systemctl daemon-reload
