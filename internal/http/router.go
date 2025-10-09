@@ -8,7 +8,8 @@ import (
 
 )
 
-func RegisterRoutes() {
-	mux := http.NewServeMux()
-	mux.Handle("/prompt", middleware.APIKeyAuth(http.HandlerFunc(handlers.PromptHandler)))
+func RegisterRoutes() *http.ServeMux {
+    mux := http.NewServeMux()
+    mux.Handle("/prompt", middleware.APIKeyAuth(http.HandlerFunc(handlers.PromptHandler)))
+    return mux
 }

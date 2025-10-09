@@ -23,9 +23,10 @@ func main() {
 		port = "3000"
 	}
 
-	router.RegisterRoutes()
+	// Get mux from router
+	mux := router.RegisterRoutes()
 	log.Println("🚀 Server running on http://localhost:"+port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		panic(err)
 	}
 }
