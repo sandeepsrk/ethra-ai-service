@@ -2,164 +2,88 @@ name: Deploy Ethra AI Service
 
 on:
   push:
-    branches: [master]
-  workflow_dispatch:
-
-defaults:
-  run:
-    shell: bash
-
-concurrency:
-  group: ethra-ai-deploy-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
+    branches:
+      - master
+  pull_request:
+    types:
+      - closed
+    branches:
+      - master
 
 jobs:
   build-and-deploy:
-    name: Build & Deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 20
     environment: ethra-ai
-    if: github.ref == 'refs/heads/master'
 
     env:
-      GO_VERSION: 1.22.6
-      APP_NAME: ethra-go
-      TARGET_DIR: /opt/ethra-go
-      PORT: 3000
-      OPENAI_MODEL: gpt-4o-mini
-      OPENAI_TIMEOUT: 120000
-      # Secrets (not echoed)
+      GO_VERSION: '1.22.6'
+      APP_NAME: 'ethra-go'
+      TARGET_DIR: '/opt/ethra-go'
       SERVER_USER: ${{ secrets.SERVER_USER }}
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      PORT: '3000'
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: 'gpt-4o-mini'
+      OPENAI_TIMEOUT: '120000'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
 
-      - name: Verify Go environment
-        run: |
-          go env
-          go version
-
-      - name: Tidy & download modules
-        run: |
-          go mod tidy
-          go mod download
-
-      - name: Run tests
-        run: go test ./... -count=1 -v
-
-      - name: Build binary (static)
-        run: |
-          CGO_ENABLED=0 go build -ldflags="-s -w" -o "$APP_NAME" ./cmd/server
-          file "$APP_NAME"
-          ls -l "$APP_NAME"
-
-      - name: Create .env (without leaking)
-        run: |
-          set -euo pipefail
-          {
-            echo "PORT=${PORT}";
-            echo "OPENAI_API_KEY=${OPENAI_API_KEY}";
-            echo "OPENAI_MODEL=${OPENAI_MODEL}";
-            echo "OPENAI_TIMEOUT=${OPENAI_TIMEOUT}";
-          } > .env
-          echo ".env file created (contents hidden)"
-
-      - name: Upload build artifact (optional)
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Cache Go modules
+        uses: actions/cache@v3
         with:
-          name: ethra-go-binary
-          path: ${{ env.APP_NAME }}
-          retention-days: 5
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
 
-      - name: Test SSH connectivity
-        uses: appleboy/ssh-action@v0.1.6
+      - name: Install dependencies
+        run: go mod tidy
+
+      - name: Build
+        run: go build -o ${{ env.APP_NAME }} ./cmd/server
+
+      # ✅ Step 1: Upload new binary
+      - name: Upload binary to server
+        uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
           key: ${{ env.SSH_PRIVATE_KEY }}
-          port: 22
-          script: echo "SSH connection test OK on $(hostname)"
-
-      - name: Upload binary
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SSH_PRIVATE_KEY }}
-          port: 22
           source: ${{ env.APP_NAME }}
           target: ${{ env.TARGET_DIR }}
 
-      - name: Upload .env
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.SERVER_HOST }}
-          username: ${{ env.SERVER_USER }}
-          key: ${{ env.SSH_PRIVATE_KEY }}
-          port: 22
-          source: .env
-          target: ${{ env.TARGET_DIR }}
-
-      - name: Remote post-deploy (systemd & restart)
+      # ✅ Step 2: SSH into server to configure and restart app
+      - name: Deploy app on server
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
           key: ${{ env.SSH_PRIVATE_KEY }}
-          port: 22
           script: |
-            set -e
-            SERVICE_NAME=ethra-go
-            BIN_PATH="${TARGET_DIR}/${APP_NAME}"
-            ENV_PATH="${TARGET_DIR}/.env"
+            echo "Stopping old app..."
+            sudo systemctl stop ethra-go || true
 
-            echo "Ensuring target directory & ownership..."
-            sudo mkdir -p "${TARGET_DIR}" || true
-            sudo chown -R "${SERVER_USER}:${SERVER_USER}" "${TARGET_DIR}" || true
+            echo "Writing .env file..."
+            cat <<EOF > ${{ env.TARGET_DIR }}/.env
+            PORT=${{ env.PORT }}
+            OPENAI_API_KEY=${{ env.OPENAI_API_KEY }}
+            OPENAI_MODEL=${{ env.OPENAI_MODEL }}
+            OPENAI_TIMEOUT=${{ env.OPENAI_TIMEOUT }}
+            EOF
 
-            echo "Setting binary permissions..."
-            sudo chmod +x "${BIN_PATH}" || true
-            sudo chown "${SERVER_USER}:${SERVER_USER}" "${BIN_PATH}" || true
-
-            echo "Securing .env..."
-            sudo chown "${SERVER_USER}:${SERVER_USER}" "${ENV_PATH}" || true
-            sudo chmod 600 "${ENV_PATH}" || true
-
-            UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-            if [ ! -f "$UNIT_FILE" ]; then
-              echo "Creating systemd unit file..."
-              sudo bash -c "printf '%s\n' '[Unit]' 'Description=Ethra Go Service' 'After=network.target' '' '[Service]' 'Type=simple' "EnvironmentFile=${ENV_PATH}" "ExecStart=${BIN_PATH}" 'Restart=on-failure' "User=${SERVER_USER}" "WorkingDirectory=${TARGET_DIR}" '' '[Install]' 'WantedBy=multi-user.target' > $UNIT_FILE"
-            fi
-
-            echo "Reloading systemd..."
+            echo "Restarting app service..."
             sudo systemctl daemon-reload
-            echo "Stopping old service (if exists)..."
-            sudo systemctl stop "${SERVICE_NAME}" || true
-            echo "Enabling service..."
-            sudo systemctl enable "${SERVICE_NAME}" || true
-            echo "Starting service..."
-            sudo systemctl start "${SERVICE_NAME}"
-            echo "Service status:" || true
-            sudo systemctl status "${SERVICE_NAME}" --no-pager || true
+            sudo systemctl start ethra-go
+            sudo systemctl status ethra-go --no-pager || true
 
-      - name: Deployment summary
-        if: always()
-        run: |
-          echo "Deployment finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "✅ Deployment complete."
