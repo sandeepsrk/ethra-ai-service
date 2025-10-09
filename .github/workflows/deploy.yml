@@ -55,6 +55,19 @@ jobs:
       - name: Build
         run: go build -o ${{ env.APP_NAME }} ./cmd/server
 
+      # Debug steps start here
+      - name: Debug environment variables
+        run: |
+          echo "SERVER_USER: ${SERVER_USER:+set}"
+          echo "SERVER_HOST: ${SERVER_HOST:+set}"
+          echo "SSH_PRIVATE_KEY: ${SSH_PRIVATE_KEY:+set}"
+          echo "OPENAI_API_KEY: ${OPENAI_API_KEY:+set}"
+
+      - name: Check SSH connection details
+        run: |
+          echo "Attempting SSH connection..."
+          ssh -o StrictHostKeyChecking=no -i <(echo "${SSH_PRIVATE_KEY}") ${SERVER_USER}@${SERVER_HOST} exit || echo "SSH connection failed"
+
       - name: Deploy to server
         uses: appleboy/ssh-action@v0.1.6
         with:
