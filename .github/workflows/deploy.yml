@@ -90,7 +90,7 @@ jobs:
             mv -f "$RELEASE_FILE" "$LIVE_FILE"
             {
               echo "PORT=${{ env.PORT }}";
-              echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}";
+              echo "OPENAI_API_KEY=${{ vars.OPENAI_API_KEY }}";
               echo "OPENAI_MODEL=${{ env.OPENAI_MODEL }}";
               echo "OPENAI_TIMEOUT=${{ env.OPENAI_TIMEOUT }}";
             } > ${{ env.TARGET_DIR }}/.env
