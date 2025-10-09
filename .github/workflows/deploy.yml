@@ -1,4 +1,4 @@
-name: Deploy Ethra AI
+name: Deploy Ethra AI Service
 
 on:
   push:
